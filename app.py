@@ -1,111 +1,179 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
-# --- KODLAMA STANDARTLARI: GÜVENLİK VE YAPILANDIRMA ---
+# --- KODLAMA STANDARTLARI ---
 st.set_page_config(page_title="Gizli Tamlar Fabrikası", layout="wide")
 
-# --- CSS STİLLERİ (Görsel 1 ile Birebir Uyumlu) ---
-STYLE = """
-<style>
-    body { font-family: 'Segoe UI', sans-serif; background-color: #f8f9fa; }
-    .factory-container { max-width: 800px; margin: auto; padding: 20px; background: white; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); }
-    
-    /* SAYI DOĞRUSU */
-    .number-line { position: relative; width: 100%; height: 100px; margin: 40px 0; border-bottom: 3px solid #00a8ff; }
-    .tick { position: absolute; bottom: -10px; width: 4px; height: 20px; background: #00a8ff; transform: translateX(-50%); }
-    .tick-label { position: absolute; top: 25px; transform: translateX(-50%); font-weight: bold; font-size: 1.2rem; }
-    .point { position: absolute; bottom: -8px; width: 16px; height: 16px; background: #00a8ff; border-radius: 50%; transform: translateX(-50%); }
+# --- OYUN DURUMU (SESSION STATE) ---
+if 'order_num' not in st.session_state:
+    st.session_state.order_num = 7
+if 'order_den' not in st.session_state:
+    st.session_state.order_den = 3
 
-    /* BLOKLAR */
-    .blocks-row { display: flex; position: absolute; bottom: 5px; width: 100%; transition: all 0.5s; }
-    .block { display: flex; align-items: center; justify-content: center; font-weight: bold; color: white; border: 1px solid white; height: 50px; border-radius: 4px 4px 0 0; }
-    
-    /* Görseldeki Renkler */
-    .purple { background-color: #9b59b6; } /* 1/3 */
-    .pink { background-color: #ff9ff3; color: #2d3436; border-radius: 0 0 8px 8px !important; border-top: none !important; } /* 1 TAM */
+# --- HTML/JS/CSS (OYUN MOTORU) ---
+# Piaget'nin korunum ilkesini desteklemek için parçaların kutuya girmesi simüle edildi.
+html_code = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"></script>
+    <style>
+        body {{ font-family: 'Segoe UI', sans-serif; background-color: #f1f2f6; display: flex; flex-direction: column; align-items: center; padding: 20px; }}
+        
+        /* SİPARİŞ KARTI */
+        .order-card {{
+            background: white; border: 4px dashed #ff7675; border-radius: 20px;
+            padding: 30px; width: 400px; text-align: center; margin-bottom: 30px;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.05);
+        }}
+        .order-num {{ font-size: 60px; font-weight: bold; color: #ff7675; margin: 0; }}
+        .order-line {{ border-bottom: 5px solid #ff7675; width: 60px; margin: 5px auto; }}
+        .order-den {{ font-size: 40px; font-weight: bold; color: #ff7675; margin: 0; }}
 
-    .mixed-row { display: flex; position: absolute; top: 105px; width: 100%; }
-</style>
-"""
+        /* PAKETLEME ALANI */
+        .factory-floor {{
+            display: flex; gap: 50px; align-items: flex-start; width: 100%; max-width: 1000px;
+        }}
 
-# --- OYUN MANTIĞI (Logic) ---
-def main():
-    st.title("🏭 Gizli Tamlar Fabrikası")
-    st.write("Görseldeki adımları takip ederek bileşik kesirleri paketleyelim.")
+        /* SOL: HAM MADDE (DEPO) */
+        .warehouse {{ flex: 1; display: flex; flex-wrap: wrap; gap: 10px; border: 2px solid #ddd; padding: 20px; border-radius: 15px; background: white; }}
+        .unit-piece {{
+            width: 60px; height: 60px; background: #0984e3; color: white; display: flex;
+            align-items: center; justify-content: center; font-weight: bold; cursor: pointer;
+            border-radius: 8px; transition: 0.2s;
+        }}
+        .unit-piece:hover {{ transform: scale(1.1); background: #74b9ff; }}
 
-    # Durum Yönetimi (Step 1 to Step 4)
-    if 'step' not in st.session_state:
-        st.session_state.step = 1
+        /* SAĞ: SEVKİYAT (PAKETLENMİŞ ÜRÜNLER) */
+        .shipping {{ flex: 1.5; display: flex; flex-wrap: wrap; gap: 20px; border: 2px solid #00b894; padding: 20px; border-radius: 15px; background: #e8f8f5; min-height: 200px; }}
+        
+        .box {{
+            display: flex; border: 3px solid #e17055; background: #ffeaa7; border-radius: 10px;
+            position: relative; padding: 5px; height: 70px; align-items: center;
+        }}
+        .box::after {{
+            content: "1 TAM"; position: absolute; top: -25px; left: 50%; transform: translateX(-50%);
+            background: #e17055; color: white; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: bold;
+        }}
+        .packed-piece {{ width: 50px; height: 50px; background: #0984e3; border: 1px solid white; display: flex; align-items: center; justify-content: center; color: white; font-size: 12px; }}
 
-    # Kontrol Butonları
-    col1, col2, col3 = st.columns([1, 1, 3])
-    with col1:
-        if st.button("⬅️ Önceki Adım") and st.session_state.step > 1:
-            st.session_state.step -= 1
-    with col2:
-        if st.button("Sonraki Adım ➡️") and st.session_state.step < 4:
-            st.session_state.step += 1
-    with col3:
-        if st.button("🔄 Fabrikayı Sıfırla"):
-            st.session_state.step = 1
+        /* AKTİF KUTU (MAKİNE) */
+        .machine {{ width: 100%; text-align: center; margin-bottom: 20px; }}
+        .machine-bin {{
+            width: 250px; height: 80px; border: 4px solid #fab1a0; margin: auto;
+            display: flex; align-items: center; justify-content: center; gap: 5px;
+            background: #fff; border-radius: 15px; position: relative;
+        }}
+        .machine-bin::before {{ content: "MAKİNE (Giriş)"; position: absolute; top: -20px; font-size: 12px; color: #aaa; }}
 
-    st.subheader(f"📍 {st.session_state.step}. Adım")
+    </style>
+</head>
+<body>
 
-    # --- DİNAMİK HTML OLUŞTURMA ---
-    # Adım 4'te 4 tane 1/3 var. Her adımda bir tane artıyor.
-    num_blocks = st.session_state.step
-    block_width = 33.33  # 1/3 olduğu için (100% / 3)
-    
-    # Üstteki 1/3 Blokları
-    upper_blocks = "".join([f'<div class="block purple" style="width:{block_width}%">1/3</div>' for _ in range(num_blocks)])
-    
-    # Alttaki Paketleme (Sadece Adım 3 ve 4'te görünür)
-    lower_content = ""
-    if st.session_state.step >= 3:
-        # 3 tane 1/3 = 1 TAM
-        lower_content += f'<div class="block pink" style="width:100%">1</div>'
-        if st.session_state.step == 4:
-            # 1/3 artan parça
-            lower_content += f'<div class="block purple" style="width:{block_width}%">1/3</div>'
-
-    html_content = f"""
-    {STYLE}
-    <div class="factory-container">
-        <div class="number-line">
-            <div class="blocks-row">{upper_blocks}</div>
-            
-            <div class="point" style="left: 0%"></div><div class="tick-label" style="left: 0%">0</div>
-            <div class="tick" style="left: 16.66%"></div>
-            <div class="tick" style="left: 33.33%"></div>
-            <div class="point" style="left: 50%"></div><div class="tick-label" style="left: 50%">1</div>
-            <div class="tick" style="left: 66.66%"></div>
-            <div class="tick" style="left: 83.33%"></div>
-            <div class="point" style="left: 100%"></div><div class="tick-label" style="left: 100%">2</div>
-
-            <div class="mixed-row">{lower_content}</div>
+    <div class="order-card">
+        <div style="font-size: 12px; color: #aaa;">GÜNLÜK SİPARİŞ KARTI</div>
+        <p class="order-num">{st.session_state.order_num}</p>
+        <div class="order-line"></div>
+        <p class="order-den">{st.session_state.order_den}</p>
+        <div style="margin-top:15px; font-style: italic; font-size: 14px; color: #636e72;">
+            "Elimizde {st.session_state.order_num} adet 1/{st.session_state.order_den} parça var. <br>
+            Bunları {st.session_state.order_den}'li paketler yap!"
         </div>
     </div>
-    """
-    
-    components.html(html_content, height=300)
 
-    # --- GÖRSEL 2: SORULAR (image_1f6946.png) ---
-    if st.session_state.step == 4:
-        st.markdown("---")
-        st.write("### 🧠 Fabrika Şefi'nin Soruları")
-        
-        q1 = st.text_input("a) 4. Adım'daki iki farklı modelin kesir gösterimi nedir?")
-        q2 = st.text_area("b) Bu iki gösterim arasındaki ilişkiyi nasıl ifade edersiniz?")
-        
-        if st.button("Cevapları Gönder"):
-            if "4/3" in q1 and "1 tam 1/3" in q1.lower():
-                st.balloons()
-                st.success("Tebrikler! Piaget'nin korunum ilkesini kanıtladın: Parçalar paketlense de miktar değişmez!")
-            else:
-                st.info("İpucu: Üstteki model 4 tane 1/3, alttaki model 1 tam ve 1/3.")
+    <div class="machine">
+        <div class="machine-bin" id="machine-bin">
+            <span style="color: #ccc;">Parçaları buraya tıkla!</span>
+        </div>
+    </div>
 
-if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:
-        st.error(f"Fabrika hattında teknik bir arıza oluştu: {e}")
+    <div class="factory-floor">
+        <div class="warehouse" id="warehouse">
+            </div>
+        <div class="shipping" id="shipping">
+            </div>
+    </div>
+
+    <script>
+        const den = {st.session_state.order_den};
+        const totalNum = {st.session_state.order_num};
+        let warehouseCount = totalNum;
+        let machineCount = 0;
+
+        const warehouse = document.getElementById('warehouse');
+        const machine = document.getElementById('machine-bin');
+        const shipping = document.getElementById('shipping');
+
+        // Depoyu Doldur
+        function initWarehouse() {{
+            warehouse.innerHTML = '';
+            for(let i=0; i < warehouseCount; i++) {{
+                let p = document.createElement('div');
+                p.className = 'unit-piece';
+                p.innerText = '1/' + den;
+                p.onclick = () => moveToMachine(p);
+                warehouse.appendChild(p);
+            }}
+        }}
+
+        function moveToMachine(element) {{
+            if (machineCount === 0) machine.innerHTML = '';
+            
+            warehouse.removeChild(element);
+            warehouseCount--;
+
+            let packed = document.createElement('div');
+            packed.className = 'packed-piece';
+            packed.innerText = '1/' + den;
+            machine.appendChild(packed);
+            machineCount++;
+
+            // Paket Doldu mu?
+            if (machineCount === den) {{
+                setTimeout(finalizePackage, 300);
+            }}
+        }}
+
+        function finalizePackage() {{
+            let box = document.createElement('div');
+            box.className = 'box';
+            for(let i=0; i < den; i++) {{
+                let p = document.createElement('div');
+                p.className = 'packed-piece';
+                p.innerText = '1/' + den;
+                box.appendChild(p);
+            }}
+            shipping.appendChild(box);
+            
+            machine.innerHTML = '<span style="color: #ccc;">Yeni paket hazır!</span>';
+            machineCount = 0;
+            
+            confetti({{ particleCount: 50, spread: 30, origin: {{ y: 0.8 }} }});
+
+            checkGameOver();
+        }}
+
+        function checkGameOver() {{
+            if (warehouseCount < den) {{
+                // Kalanlar depoda kalır, paketleme biter.
+                if(warehouseCount === 0) {{
+                    alert("Tüm sipariş paketlendi!");
+                }}
+            }}
+        }}
+
+        initWarehouse();
+    </script>
+</body>
+</html>
+"""
+
+components.html(html_code, height=800)
+
+# --- ALT KONTROLLER (STREAMLIT) ---
+st.markdown("---")
+if st.button("🔄 Yeni Rastgele Sipariş Al"):
+    import random
+    st.session_state.order_den = random.choice([2, 3, 4, 5])
+    st.session_state.order_num = random.randint(st.session_state.order_den + 1, 15)
+    st.rerun()
